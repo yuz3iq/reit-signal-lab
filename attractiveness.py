@@ -104,6 +104,35 @@ def fetch_dividend_yield(code, timeout=10):
     return None, None
 
 
+def debug_fetch_dividend(code, timeout=10):
+    """Diagnostic-only: shows exactly what each candidate URL returns, so a scrape
+    failure in production can be root-caused from real bytes instead of guessed at."""
+    urls = [
+        f"https://finance.naver.com/item/coinfo.naver?code={code}",
+        f"https://finance.naver.com/item/main.naver?code={code}",
+    ]
+    out = []
+    for url in urls:
+        entry = {"url": url}
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+            entry["status_code"] = r.status_code
+            entry["final_url"] = r.url
+            entry["apparent_encoding"] = r.apparent_encoding
+            entry["content_length_bytes"] = len(r.content)
+            r.encoding = "euc-kr"
+            html = r.text
+            entry["has_label_배당수익률"] = "배당수익률" in html
+            entry["has_label_시가배당율"] = "시가배당율" in html
+            iframe_m = re.search(r'<iframe[^>]+src="([^"]*)"', html, re.I)
+            entry["first_iframe_src"] = iframe_m.group(1) if iframe_m else None
+            entry["snippet_head_300"] = html[:300]
+        except Exception as e:
+            entry["error"] = str(e)
+        out.append(entry)
+    return out
+
+
 def get_attractiveness(ecos_key):
     result = {"tickers": {}, "warnings": []}
 

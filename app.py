@@ -5,7 +5,7 @@ import time
 from flask import Flask, jsonify, send_from_directory
 
 from live import get_live_signals
-from attractiveness import get_attractiveness
+from attractiveness import get_attractiveness, debug_fetch_dividend
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -54,6 +54,11 @@ def api_attractiveness():
     resp = dict(_attr_cache["data"])
     resp["cache_age_sec"] = round(now - _attr_cache["ts"])
     return jsonify(resp)
+
+
+@app.route("/api/debug/dividend/<code>")
+def api_debug_dividend(code):
+    return jsonify(debug_fetch_dividend(code))
 
 
 @app.route("/api/bundle")
