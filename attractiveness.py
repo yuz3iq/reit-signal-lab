@@ -74,13 +74,19 @@ def fetch_10y_ktb_yield(ecos_key, lookback_days=20, timeout=10):
     }
 
 
-def _extract_pct_after_label(html, label, window=400):
-    idx = html.find(label)
-    if idx == -1:
-        return None
-    chunk = re.sub(r"<[^>]+>", " ", html[idx: idx + window])
-    m = re.search(r"([0-9]+\.[0-9]+)\s*%", chunk)
-    return float(m.group(1)) if m else None
+def _extract_pct_after_label(html, label, window=60):
+    """Find a label that is TIGHTLY followed by a percentage (e.g. "배당수익률 3.36%"),
+    scanning every occurrence of the label rather than just the first. A wide
+    window over just the first occurrence is unreliable on pages (like FnGuide's
+    company snapshot) that repeat the label as a tooltip description or a row
+    header for an unrelated formula well before the real value appears."""
+    for m in re.finditer(re.escape(label), html):
+        chunk = re.sub(r"<[^>]+>", " ", html[m.end(): m.end() + window])
+        chunk = re.sub(r"\s+", " ", chunk).strip()
+        pm = re.match(r"^[^0-9%]{0,10}([0-9]+(?:\.[0-9]+)?)\s*%", chunk)
+        if pm:
+            return float(pm.group(1))
+    return None
 
 
 def fetch_dividend_yield(code, timeout=10):
