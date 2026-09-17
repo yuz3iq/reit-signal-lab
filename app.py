@@ -6,6 +6,7 @@ from flask import Flask, jsonify, send_from_directory
 
 from live import get_live_signals
 from attractiveness import get_attractiveness, debug_fetch_dividend
+from dart_dividend import CORP_CODES as DART_CORP_CODES, fetch_dart_dividend_yield
 
 app = Flask(__name__, static_folder="static", static_url_path="")
 
@@ -16,7 +17,29 @@ ATTR_CACHE_TTL = 3600  # 1 hour -- KTB yield updates daily, dividend yield chang
 _attr_cache = {"data": None, "ts": 0}
 ECOS_API_KEY = os.environ.get("ECOS_API_KEY", "")
 
+# DART 공시(alotMatter)는 분기 단위로만 갱신되므로 12시간 캐시 -- WiseReport 스크래핑과
+# 별도 캐시로 관리해, DART 조회가 실패해도 매력도 지수 본체(배당수익률-금리스프레드)는
+# 영향받지 않도록 분리함.
+DART_CACHE_TTL = 43200  # 12 hours
+_dart_cache = {"data": None, "ts": 0}
+DART_API_KEY = os.environ.get("DART_API_KEY", "")
+
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+
+
+def _get_dart_dividends():
+    now = time.time()
+    if _dart_cache["data"] is None or now - _dart_cache["ts"] > DART_CACHE_TTL:
+        data = {}
+        if DART_API_KEY:
+            for code in DART_CORP_CODES:
+                try:
+                    data[code] = fetch_dart_dividend_yield(code, DART_API_KEY)
+                except Exception as e:
+                    data[code] = {"error": str(e)}
+        _dart_cache["data"] = data
+        _dart_cache["ts"] = now
+    return _dart_cache["data"]
 
 
 @app.route("/")
@@ -53,6 +76,15 @@ def api_attractiveness():
         _attr_cache["ts"] = now
     resp = dict(_attr_cache["data"])
     resp["cache_age_sec"] = round(now - _attr_cache["ts"])
+
+    if resp.get("ok") and DART_API_KEY and "tickers" in resp:
+        dart_data = _get_dart_dividends()
+        for code, entry in resp["tickers"].items():
+            entry["dart"] = dart_data.get(code)
+    elif "tickers" in resp and not DART_API_KEY:
+        for entry in resp["tickers"].values():
+            entry["dart"] = None
+
     return jsonify(resp)
 
 

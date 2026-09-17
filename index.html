@@ -297,10 +297,11 @@ text.svg-axis, .svg-axis{fill:var(--ink-faint); font-family:'IBM Plex Mono',mono
       </div>
       <div class="card" style="margin-bottom:0;">
         <h3>스프레드 = 배당수익률 − 국고채(10년) 금리</h3>
-        <div class="sub">스프레드가 클수록 무위험 자산인 국채 대비 리츠가 더 높은 수익률로 거래되고 있음을 의미함. 배당수익률은 네이버금융 공시 기준 실시간 조회값이며, 조회에 실패한 종목은 추정치로 채우지 않고 NOT INCLUDED로 표기함.</div>
+        <div class="sub">스프레드가 클수록 무위험 자산인 국채 대비 리츠가 더 높은 수익률로 거래되고 있음을 의미함. 배당수익률은 두 개의 독립된 실데이터 소스를 나란히 표기함 — ① <b style="color:var(--ink);">시가 기준</b>: 네이버금융/WiseReport 실시간 조회값(현재 주가 대비), ② <b style="color:var(--ink);">DART 공시 기준</b>: 금융감독원 전자공시 사업·분기보고서에 회사가 직접 신고한 배당에 관한 사항(alotMatter, 공시 시점 주가 기준). 두 값이 크게 다르면 시점 차이나 특별배당 포함 여부를 의심해볼 수 있음. 두 소스 모두 조회에 실패한 항목은 추정치로 채우지 않고 NOT INCLUDED로 표기함. DART 값 클릭 시 원문 공시로 이동함.</div>
         <div class="tbl-wrap" style="margin-top:14px;">
           <table id="attr-table"></table>
         </div>
+        <div id="attr-notes" style="margin-top:12px;"></div>
       </div>
     </div>
   </section>
@@ -1027,6 +1028,12 @@ function attrSkeletonRows(){
   return `<tr><td colspan="4" style="text-align:center; color:var(--ink-faint);">조회 중&hellip;</td></tr>`;
 }
 
+// 통상적인 경상 배당수익률 범위를 크게 벗어나는 값에 대해, 근거를 확인해 덧붙이는 각주.
+// 값 자체는 그대로 표시함(추정치로 대체하거나 숨기지 않음) — 왜 그런 값이 나오는지 맥락만 보탬.
+const DIVIDEND_NOTES = {
+  "338100": "2025년 강남N타워 매각(시세차익 약 135억원)에 따른 특별배당이 반영되어 있고, 2026년 서울스퀘어 매각 관련 추가 특별배당 기대감도 있어 경상 배당수익률보다 높게 나타남. 자산 매각에 따른 일회성 배당이므로 향후에도 이 수준이 유지된다고 가정해서는 안 됨.",
+};
+
 async function fetchAttractiveness(attempt=0){
   const table = document.getElementById('attr-table');
   const desc = document.getElementById('attr-desc');
@@ -1058,24 +1065,42 @@ async function fetchAttractiveness(attempt=0){
 
     const codes = Object.keys(attr.tickers || {});
     table.innerHTML = `
-      <thead><tr><th>종목</th><th>배당수익률</th><th>국고채(10년)</th><th>스프레드</th></tr></thead>
+      <thead><tr><th>종목</th><th>배당수익률<br><span style="font-weight:400; font-size:9.5px; text-transform:none; letter-spacing:0;">(시가 기준)</span></th><th>DART 공시<br><span style="font-weight:400; font-size:9.5px; text-transform:none; letter-spacing:0;">(공시 기준)</span></th><th>국고채(10년)</th><th>스프레드</th></tr></thead>
       <tbody>
         ${codes.map(code => {
           const t = attr.tickers[code];
           if(!t.available){
-            return `<tr><td>${t.name}</td><td colspan="3" style="text-align:center; color:var(--ink-faint);">NOT INCLUDED — ${t.error || '배당수익률 조회 실패'}</td></tr>`;
+            return `<tr><td>${t.name}</td><td colspan="4" style="text-align:center; color:var(--ink-faint);">NOT INCLUDED — ${t.error || '배당수익률 조회 실패'}</td></tr>`;
           }
           const hasSpread = typeof t.spread_pct === 'number';
           const spreadCls = hasSpread ? (t.spread_pct>=0 ? 'pos' : 'neg') : '';
           const spreadTxt = hasSpread ? `${t.spread_pct>=0?'+':''}${t.spread_pct}%p` : '—';
+          const note = DIVIDEND_NOTES[code];
+          const noteMark = note ? ` <span title="${note.replace(/"/g,'&quot;')}" style="cursor:help; color:var(--accent); font-size:11px;">[※]</span>` : '';
+          const dart = t.dart;
+          let dartTxt;
+          if(dart && typeof dart.value_pct === 'number'){
+            dartTxt = `<a href="${dart.source_url}" target="_blank" rel="noopener" title="공시 기준일 ${dart.stlm_dt} · 클릭 시 DART 원문" style="color:inherit; text-decoration:underline dotted;">${dart.value_pct.toFixed(2)}%</a>`;
+          } else {
+            dartTxt = `<span style="color:var(--ink-faint);">NOT INCLUDED</span>`;
+          }
           return `<tr>
             <td>${t.name}</td>
-            <td>${t.dividend_yield_pct.toFixed(2)}%</td>
+            <td>${t.dividend_yield_pct.toFixed(2)}%${noteMark}</td>
+            <td>${dartTxt}</td>
             <td>${ktb ? ktb.value_pct.toFixed(2)+'%' : '—'}</td>
             <td class="${spreadCls}">${spreadTxt}</td>
           </tr>`;
         }).join('')}
       </tbody>`;
+
+    const notesEl = document.getElementById('attr-notes');
+    const activeNotes = codes.filter(c => attr.tickers[c] && attr.tickers[c].available && DIVIDEND_NOTES[c]);
+    notesEl.innerHTML = activeNotes.length ? `
+      <div class="hcard" style="border-color:var(--accent);">
+        <span class="tag adj">※ 특이치 해설</span>
+        ${activeNotes.map(c => `<p style="margin-top:6px;"><b style="color:var(--ink);">${attr.tickers[c].name}</b> — ${DIVIDEND_NOTES[c]}</p>`).join('')}
+      </div>` : '';
   } catch(e){
     if(attempt < MAX_RETRIES){
       desc.textContent = `서버를 깨우는 중입니다… (무료 플랜 콜드 스타트, 최대 1분 소요 · 재시도 ${attempt+1}/${MAX_RETRIES})`;
@@ -1085,6 +1110,7 @@ async function fetchAttractiveness(attempt=0){
     desc.innerHTML = '매력도 지수 조회 실패 (' + e.message + ').'
       + ' <button class="live-retry" id="attr-retry-btn" type="button">다시 시도</button>';
     table.innerHTML = '';
+    document.getElementById('attr-notes').innerHTML = '';
     const btn = document.getElementById('attr-retry-btn');
     if(btn) btn.addEventListener('click', () => fetchAttractiveness(0));
   }
