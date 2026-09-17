@@ -74,16 +74,22 @@ def fetch_10y_ktb_yield(ecos_key, lookback_days=20, timeout=10):
     }
 
 
-def _extract_pct_after_label(html, label, window=60):
-    """Find a label that is TIGHTLY followed by a percentage (e.g. "배당수익률 3.36%"),
-    scanning every occurrence of the label rather than just the first. A wide
-    window over just the first occurrence is unreliable on pages (like FnGuide's
-    company snapshot) that repeat the label as a tooltip description or a row
-    header for an unrelated formula well before the real value appears."""
+def _extract_pct_after_label(html, label, window=300):
+    """Find a label that is followed (once HTML tags are stripped and whitespace
+    collapsed) closely by a percentage, e.g. "배당수익률 3.36%" -- scanning every
+    occurrence of the label rather than just the first. Two things make this
+    trickier than a naive "search near the label" pass: (1) a page (like
+    FnGuide's company snapshot) can repeat the label as a tooltip description or
+    a row header for an unrelated formula well before the real value appears, so
+    every occurrence is checked, not just the first; (2) real table markup often
+    nests the value several tags deep (<td><div><span>3.36</span>%</div></td>),
+    which easily exceeds a short raw-character window before any real text is
+    reached -- window=300 was sized empirically against FnGuide's actual markup,
+    where the true value can sit ~150+ raw characters of tags past the label."""
     for m in re.finditer(re.escape(label), html):
         chunk = re.sub(r"<[^>]+>", " ", html[m.end(): m.end() + window])
         chunk = re.sub(r"\s+", " ", chunk).strip()
-        pm = re.match(r"^[^0-9%]{0,10}([0-9]+(?:\.[0-9]+)?)\s*%", chunk)
+        pm = re.match(r"^[^0-9%]{0,15}([0-9]+(?:\.[0-9]+)?)\s*%", chunk)
         if pm:
             return float(pm.group(1))
     return None
