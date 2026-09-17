@@ -137,9 +137,14 @@ def debug_fetch_dividend(code, timeout=10):
             iframe_m = re.search(r'<iframe[^>]+src="([^"]*)"', html, re.I)
             entry["first_iframe_src"] = iframe_m.group(1) if iframe_m else None
             for label in ("배당수익률", "시가배당율"):
-                idx = html.find(label)
-                if idx != -1:
-                    entry[f"context_{label}"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html[idx:idx+500])).strip()
+                idxs = [m.start() for m in re.finditer(re.escape(label), html)]
+                entry[f"count_{label}"] = len(idxs)
+                contexts = []
+                for idx in idxs[:6]:
+                    ctx = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html[idx:idx + 300])).strip()
+                    contexts.append({"offset": idx, "context": ctx})
+                if contexts:
+                    entry[f"occurrences_{label}"] = contexts
             entry["snippet_head_300"] = html[:300]
         except Exception as e:
             entry["error"] = str(e)
